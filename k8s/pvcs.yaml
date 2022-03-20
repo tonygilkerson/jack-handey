@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path # local-path is a Rancher thing, for docker-desktop I am not sure
+  resources:
+    requests:
+      storage: 100Mi

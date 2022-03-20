@@ -1,0 +1,206 @@
+#
+# This deployment watches for listing.txt and converts it to listing.csv
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: txt-to-csv
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: txt-to-csv
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: txt-to-csv
+    spec:
+      containers:
+        - name: txt-to-csv
+          command: ["/bin/sh"]
+          args:
+            - -c
+            - |
+              set -x;
+              while true; do 
+                if [ -f /data/listing.txt ]; then
+                  echo Convert listing.txt to listing.csv;
+                  cp /data/listing.txt /tmp/listing.txt;
+                  rm /data/listing.txt;
+                  cat /tmp/listing.txt | awk '{print $1 "," $2 "," $3 "," $4 "," $5 "," $6" "$7" "$8 "," $9}' > /tmp/listing.csv;
+                  cat /tmp/listing.csv;
+                  mv /tmp/listing.csv /data/listing.csv
+                else
+                  echo ZZZzzz...;
+                  sleep 5;
+                fi
+              done
+          image: busybox
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: 250m
+              memory: 250Mi
+            limits:
+              cpu: 500m
+              memory: 500Mi
+          volumeMounts:
+          - name: data
+            mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: storage
+---
+#
+# This deployment watches for listing.csv and converts it to listing.json
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: csv-to-json
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: csv-to-json
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: csv-to-json
+    spec:
+      containers:
+        - name: csv-to-json
+          command: ["/bin/sh"]
+          args:
+            - -c
+            - |
+              set -x;
+              while true; do 
+                if [ -f /data/listing.csv ]; then
+                  echo Convert listing.csv to listing.json;
+                  cp /data/listing.csv /tmp/listing.csv;
+                  rm /data/listing.csv;
+                  cat /tmp/listing.csv | jq -Rc '. / "\n" | .[] | . / "," | { mod: .[0], no: .[1], user: .[2], group: .[3], usrno: .[4], date: .[5], file: .[6]}' - > /tmp/listing.json;
+                  cat /tmp/listing.json;
+                  mv /tmp/listing.json /data/listing.json
+                else
+                  echo ZZZzzz...;
+                  sleep 5;
+                fi
+              done
+          image: stedolan/jq
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: 250m
+              memory: 250Mi
+            limits:
+              cpu: 500m
+              memory: 500Mi
+          volumeMounts:
+          - name: data
+            mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: storage
+---
+#
+# This deployment watches for listing.json and for each doc post to api to load it in the db
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: json-to-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: json-to-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: json-to-api
+    spec:
+      containers:
+        - name: json-to-api
+          command: ["/bin/sh"]
+          args:
+            - -c
+            - |
+              set +x;
+              while true; do 
+                if [ -f /data/listing.json ]; then
+                  echo Post docs from listing.json to the API;
+                  cp /data/listing.json /tmp/listing.json;
+                  rm /data/listing.json;
+                  while IFS= read -r doc
+                  do
+                    echo -e "\n\n--------------------------------------------------------------------\n"
+                    echo "Post doc to api: $doc"
+                    curl --silent -d "$doc" -X POST http://api/
+                  done < /tmp/listing.json;
+                else
+                  echo ZZZzzz...;
+                  sleep 5;
+                fi
+              done
+          image: curlimages/curl
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: 250m
+              memory: 250Mi
+            limits:
+              cpu: 500m
+              memory: 500Mi
+          volumeMounts:
+          - name: data
+            mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: storage
+
+---
+#
+#  A moch REST API use to load a database
+#
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api
+    spec:
+      containers:
+        - name: api
+          image: busybox
+          command: ["/bin/sh"]
+          args:
+            - -c
+            - |
+              set -x;
+              while true; do ( echo -ne "HTTP/1.1 200 OK\n\n{ response: ok, container: $HOSTNAME}"; ) | nc -v -l -p 80 ; done;
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests:
+              cpu: 250m
+              memory: 250Mi
+            limits:
+              cpu: 500m
+              memory: 500Mi          
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+
+            

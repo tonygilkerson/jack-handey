@@ -1,0 +1,41 @@
+#
+# This will create a listing.txt file every so often
+#
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: getdata
+spec:
+  schedule: '*/1 * * * *'
+  successfulJobsHistoryLimit: 5
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    metadata:
+      name: getdata
+    spec:
+      template:
+        metadata:
+          name: getdata
+        spec:
+          containers:
+          - name: getdata
+            command: ["/bin/sh"]
+            args: ['-c', 'find / -type f -exec ls -l {} \; | tee /data/listing.txt']
+            image: busybox
+            resources:
+              requests:
+                cpu: 250m
+                memory: 250Mi
+              limits:
+                cpu: 500m
+                memory: 500Mi
+            volumeMounts:
+            - name: data
+              mountPath: /data
+          restartPolicy: OnFailure
+          volumes:
+          - name: data
+            persistentVolumeClaim:
+              claimName: storage
+  
+
